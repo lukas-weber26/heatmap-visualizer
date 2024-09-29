@@ -36,11 +36,6 @@ double*generate_test_array(){
 		test_array[i] = pow(rand_from_range(-1.0, 1.0),2);
 	}
 	
-//	#pragma omp parallel for simd
-//	for (int i = 0; i < size/10; i++){
-//		test_array[i] = 0.5;
-//	}
-
 	return test_array;
 }
 
@@ -48,19 +43,29 @@ unsigned char* normalize_array(double * array, int array_size){
 	int draw_size = array_size*3;
 	unsigned char* drawable_array = malloc(sizeof(unsigned char)*draw_size);
 	
-	//there are absolutely optimizations that can be done here
-	//like splitting the thing up and finding like 10 smaller mins and maxes, then combining
-	//this may actually be a real performance improvement for large enough arrays
 	double min = array[0];
 	double max= array[0];
-
-	for (int i = 0; i < array_size; i++){
-		if (array[i] > max) {
-			max = array[i];
-		} else if (array[i] < min) {
-			min = array[i];
+	
+	#pragma omp parallel
+	{
+		double local_min = array[0];
+		double local_max= array[0];
+		for (int i = 0; i < array_size; i++){
+			if (array[i] > local_max) {
+				local_max = array[i];
+			} else if (array[i] < local_min) {
+				local_min= array[i];
+			}
+			
 		}
-		
+		#pragma omp critial 
+		{
+			if (local_min < min) {
+				min = local_min;
+			} else if (local_max > max) {
+				max = local_max;
+			}
+		}
 	}
 
 	double range = (max - min);
