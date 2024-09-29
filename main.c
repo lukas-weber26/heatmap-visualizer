@@ -63,8 +63,8 @@ unsigned char* normalize_array(double * array, int array_size){
 		
 	}
 
-	#pragma omp parallel for simd
 	double range = (max - min);
+	#pragma omp parallel for simd
 	for (int i = 0; i < array_size; i ++) {
 		unsigned char blue = (unsigned char)255*(array[i]- min)/range;
 		drawable_array[3*i] = blue;	
