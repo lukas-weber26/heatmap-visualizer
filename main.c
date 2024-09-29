@@ -6,9 +6,16 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
+#include <pthread.h>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "./stb_image_write.h"
+
+void handle_close(GLFWwindow * window);
+void window_size_callback(GLFWwindow * window, int xsize, int ysize);
+double*generate_test_array();
+unsigned char* normalize_array(double * array, int array_size);
+void diffuse(double * array, int width, int height, int passes);
 
 void handle_close(GLFWwindow * window) {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS){
@@ -87,11 +94,6 @@ void diffuse(double * array, int width, int height, int passes) {
 		
 		memcpy(temp, array, sizeof(double)*width*height);
 
-		//#pragma omp parallel for
-		//for (int i = 1; i < width*height-1; i ++) {
-		//	array[i] = (0.8*temp[i] + 0.1*temp[i+1] + 0.1*temp[i-1]);
-		//}
-		
 		#pragma omp parallel for
 		for (int i = 1; i < height-1; i ++) {
 			#pragma omp parallel for simd
@@ -105,31 +107,33 @@ void diffuse(double * array, int width, int height, int passes) {
 
 }
 
-int main(int argc, char * argv[]) {
-	//if (argc != 2) {
-	//	printf("Usage: view <filename>\n");
-	//}	
+typedef struct drawstruct{
+	const char * print_name;
+	int width;
+	int height;
+	unsigned int *shader_program;
+	unsigned int *texture; 
+	unsigned int *VAO;
+	GLFWwindow * window;
+	unsigned char* data;
+} drawstruct;
 
-	int width, height, nrChannels;
-	//stbi_set_flip_vertically_on_load(1);
-	//unsigned char * data = stbi_load(argv[1], &width, &height, &nrChannels, 0);
+void * initialize_glfw(void * arg) {
 
-	//if (!data) {
-	//	printf("Invalid image.\n");
-	//	exit(0);
-	//}
-	double * raw_data = generate_test_array();
-	diffuse(raw_data,1920,1080,100);
-	unsigned char* data = normalize_array(raw_data,1920*1080);
-	stbi_write_jpg("test.jpg", 1920, 1080,3,data, 90);
+	drawstruct * drawable = (drawstruct *)arg;
+	int width = drawable->width;
+	int height = drawable -> height;
+	unsigned int *shader_program = drawable->shader_program;
+	unsigned int *texture = drawable->texture; 
+	unsigned int *VAO = drawable->VAO;
+	GLFWwindow * window = drawable ->window;
 
-	//time to get gl set up! 
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow * window = glfwCreateWindow(1920,1080, "grid", NULL, NULL);
+	window = glfwCreateWindow(width,height, "grid", NULL, NULL);
 
 	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, window_size_callback);
@@ -150,9 +154,8 @@ int main(int argc, char * argv[]) {
 		-0.90,0.90,0,0.90,
 	};
 
-	unsigned int VAO;
-	glGenVertexArrays(1, &VAO);
-	glBindVertexArray(VAO);
+	glGenVertexArrays(1, VAO);
+	glBindVertexArray(*VAO);
 
 	unsigned int VBO;
 	glGenBuffers(1,&VBO);
@@ -190,14 +193,14 @@ int main(int argc, char * argv[]) {
 	glCompileShader(fragment_shader);
 	glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
 
-	unsigned int shader_program = glCreateProgram();
-	glAttachShader(shader_program, fragment_shader);
-	glAttachShader(shader_program, vertex_shader);
-	glLinkProgram(shader_program);
-	glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
+	glAttachShader(*shader_program, fragment_shader);
+	glAttachShader(*shader_program, vertex_shader);
+	glLinkProgram(*shader_program);
+	glGetProgramiv(*shader_program, GL_LINK_STATUS, &success);
 	assert(success);
 
-	glUseProgram(shader_program);
+	*shader_program = glCreateProgram();
+	glUseProgram(*shader_program);
 	glDeleteShader(vertex_shader);
 	glDeleteShader(fragment_shader);
 
@@ -206,20 +209,30 @@ int main(int argc, char * argv[]) {
 	glEnableVertexAttribArray(0);		
 	glEnableVertexAttribArray(1);
 
-	unsigned int texture; 
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
+	glGenTextures(1, texture);
+	glBindTexture(GL_TEXTURE_2D, *texture);
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	
-	//modified for test array
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1920, 1080, 0, GL_RGB ,GL_UNSIGNED_BYTE, data);
+
+	return NULL;
+}
+
+void * display_image(void * arg){
+
+	drawstruct * drawable = (drawstruct *)arg;
+	int width = drawable->width;
+	int height = drawable -> height;
+	unsigned int *shader_program = drawable->shader_program;
+	unsigned int *texture = drawable->texture; 
+	unsigned int *VAO = drawable->VAO;
+	GLFWwindow * window = drawable ->window;
+	unsigned char* data = drawable->data;
+		
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB ,GL_UNSIGNED_BYTE, data);
 	glGenerateMipmap(GL_TEXTURE_2D);
-	
-	//stbi_image_free(data);
 
 	while(!glfwWindowShouldClose(window)) {
 		handle_close(window);
@@ -227,10 +240,10 @@ int main(int argc, char * argv[]) {
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, texture);
+		glBindTexture(GL_TEXTURE_2D, *texture);
 
-		glBindVertexArray(VAO);
-		glUseProgram(shader_program);
+		glBindVertexArray(*VAO);
+		glUseProgram(*shader_program);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 
 		glfwSwapBuffers(window);
@@ -238,7 +251,69 @@ int main(int argc, char * argv[]) {
 	}
 
 	glfwTerminate();
-	return 0;
 
+	return NULL;
 }
 
+void *print_image(void * arg){
+	drawstruct * drawable = (drawstruct *)arg;
+	int width = drawable->width;
+	int height = drawable -> height;
+	unsigned char* data = drawable->data;
+	stbi_write_jpg(drawable->print_name, width, height,3,data, 90);
+	return NULL;
+}
+
+void draw_heatmap(double * data, int width, int height, int free_data, int diffusion_steps, int show, int print, char * printname){
+
+	pthread_t show_thread;
+	pthread_t print_thread;
+	drawstruct drawable;
+	drawable.width = width;
+	drawable.height = height;
+	drawable.print_name = printname;
+
+	if (show == 1){
+		pthread_create(&show_thread, NULL, initialize_glfw, (void *)(&drawable));
+	}
+
+	if (free_data == 0) {
+		double * temp_data = malloc(sizeof(double)*width*height);
+		memcpy(temp_data, data, sizeof(double)*width*height);
+		data = temp_data;
+	}
+
+	diffuse(data,width,height,diffusion_steps);
+	unsigned char* normalized_data = normalize_array(data,width*height);
+	
+	if (show == 1) {
+		pthread_join(show_thread,NULL);
+	}
+
+	if (show == 1){
+		drawable.data = normalized_data;
+		pthread_create(&show_thread, NULL, display_image, (void *)(&drawable));
+	}
+	
+	if (print == 1) {
+		drawable.print_name = printname;
+		pthread_create(&print_thread, NULL, print_image, (void *)(&drawable));
+	}	
+
+	if (show == 1) {
+		pthread_join(show_thread,NULL);
+	}
+	
+	if (print == 1) {
+		pthread_join(print_thread,NULL);
+	}
+
+	free(normalized_data);
+	free(data);
+}   
+
+int main(){
+	double * raw_data = generate_test_array();
+	draw_heatmap(raw_data, 1920, 1080, 1, 5, 1, 1, "thread_test_print.jpg");
+	//draw_heatmap(raw_data, 1920, 1080, 0, 0, 1, 1, "thread_test2_print.jpg");
+}
