@@ -120,7 +120,7 @@ typedef struct drawstruct{
 
 void * initialize_glfw(void * arg) {
 
-	drawstruct * drawable = arg;
+	drawstruct * drawable = (drawstruct *)(arg);
 
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -269,7 +269,6 @@ void draw_heatmap(double * data, int width, int height, int free_data, int diffu
 	drawable->print_name = printname;
 	
 	if (show == 1){
-		//pthread_create(&show_thread, NULL, initialize_glfw, (void *)(&drawable));
 		initialize_glfw(drawable);
 	}
 
@@ -282,26 +281,17 @@ void draw_heatmap(double * data, int width, int height, int free_data, int diffu
 	diffuse(data,width,height,diffusion_steps);
 	unsigned char* normalized_data = normalize_array(data,width*height);
 	
-	if (show == 1) {
-		//pthread_join(show_thread,NULL);
-	}
+	if (print == 1) {
+		drawable->print_name = printname;
+		pthread_create(&print_thread, NULL, print_image, (void *)(&drawable));
+		//print_image(drawable);
+	}	
 
 	if (show == 1){
 		drawable->data = normalized_data;
-		//pthread_create(&show_thread, NULL, display_image, (void *)(&drawable));
 		display_image(drawable);
 	}
-	
-	if (print == 1) {
-		drawable->print_name = printname;
-		//pthread_create(&print_thread, NULL, print_image, (void *)(&drawable));
-		print_image(drawable);
-	}	
 
-	if (show == 1) {
-		//pthread_join(show_thread,NULL);
-	}
-	
 	if (print == 1) {
 		//pthread_join(print_thread,NULL);
 	}
