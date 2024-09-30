@@ -257,52 +257,77 @@ void *print_image(void * arg){
 	unsigned char *data = drawable->data;
 	stbi_write_jpg(drawable->print_name, width, height,3,data, 90);
 	return NULL;
+} 
+
+typedef struct normalization_data{
+	int width;
+	int height; 
+	int diffusion_steps;
+	double * data;
+	unsigned char * normalized_data;
+	int free_data;
+}normalization_data;
+
+void * work_thread_work(void * arg){
+	normalization_data * local_data = arg;
+	if (local_data->free_data== 0) {
+		double * temp_data = malloc(sizeof(double)*local_data->width*local_data->height);
+		memcpy(temp_data, local_data->data, sizeof(double)*local_data->width*local_data->height);
+		local_data->data= temp_data;
+	}
+	 
+	//quesion: can I get this into a thread and run it imediately?
+	diffuse(local_data->data,local_data->width,local_data->height,local_data->diffusion_steps);
+	local_data-> normalized_data = normalize_array(local_data->data,local_data->width*local_data->height);
+	return NULL;
 }
 
 void draw_heatmap(double * data, int width, int height, int free_data, int diffusion_steps, int show, int print, char * printname){
 
-	pthread_t show_thread;
+	pthread_t work_thread;
 	pthread_t print_thread;
+
 	drawstruct *drawable = malloc(sizeof(drawstruct));
 	drawable->width = width;
 	drawable->height = height;
 	drawable->print_name = printname;
-	
+
+	normalization_data *normalization_data_struct= malloc(sizeof(normalization_data));
+	normalization_data_struct->width = width;
+	normalization_data_struct->height = height;
+	normalization_data_struct->diffusion_steps= diffusion_steps;
+	normalization_data_struct->free_data=free_data;
+	normalization_data_struct->data = data;
+
+	pthread_create(&work_thread, NULL, work_thread_work,normalization_data_struct);
+
 	if (show == 1){
 		initialize_glfw(drawable);
 	}
 
-	if (free_data == 0) {
-		double * temp_data = malloc(sizeof(double)*width*height);
-		memcpy(temp_data, data, sizeof(double)*width*height);
-		data = temp_data;
-	}
-
-	diffuse(data,width,height,diffusion_steps);
-	unsigned char* normalized_data = normalize_array(data,width*height);
+	pthread_join(work_thread,NULL);
 	
 	if (print == 1) {
 		drawable->print_name = printname;
-		pthread_create(&print_thread, NULL, print_image, (void *)(&drawable));
-		//print_image(drawable);
+		pthread_create(&print_thread, NULL, print_image, drawable);
 	}	
 
 	if (show == 1){
-		drawable->data = normalized_data;
+		drawable->data = normalization_data_struct->normalized_data;
 		display_image(drawable);
 	}
 
 	if (print == 1) {
-		//pthread_join(print_thread,NULL);
+		pthread_join(print_thread,NULL);
 	}
 	
 	free(drawable);
-	free(normalized_data);
-	free(data);
+	free(normalization_data_struct->normalized_data);
+	free(normalization_data_struct->data);
+	free(normalization_data_struct);
 }   
 
 int main(){
 	double * raw_data = generate_test_array();
-	draw_heatmap(raw_data, 1920, 1080, 1, 5, 1, 1, "thread_test_print.jpg");
-	//draw_heatmap(raw_data, 1920, 1080, 0, 0, 1, 1, "thread_test2_print.jpg");
+	draw_heatmap(raw_data, 1920, 1080, 1, 5, 1, 1, "name_test.jpg");
 }
