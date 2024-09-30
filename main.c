@@ -111,32 +111,26 @@ typedef struct drawstruct{
 	const char * print_name;
 	int width;
 	int height;
-	unsigned int *shader_program;
-	unsigned int *texture; 
-	unsigned int *VAO;
-	GLFWwindow * window;
-	unsigned char* data;
+	unsigned int shader_program;
+	unsigned int texture; 
+	unsigned int VAO;
+	GLFWwindow* window;
+	unsigned char * data;
 } drawstruct;
 
 void * initialize_glfw(void * arg) {
 
-	drawstruct * drawable = (drawstruct *)arg;
-	int width = drawable->width;
-	int height = drawable -> height;
-	unsigned int *shader_program = drawable->shader_program;
-	unsigned int *texture = drawable->texture; 
-	unsigned int *VAO = drawable->VAO;
-	GLFWwindow * window = drawable ->window;
+	drawstruct * drawable = arg;
 
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);	
 
-	window = glfwCreateWindow(width,height, "grid", NULL, NULL);
+	drawable->window = glfwCreateWindow(drawable->width,drawable->height, "grid", NULL, NULL);
 
-	glfwMakeContextCurrent(window);
-	glfwSetFramebufferSizeCallback(window, window_size_callback);
+	glfwMakeContextCurrent(drawable->window);
+	glfwSetFramebufferSizeCallback(drawable->window, window_size_callback);
 	glfwPollEvents();
 
 	glewExperimental = GL_TRUE;
@@ -154,8 +148,9 @@ void * initialize_glfw(void * arg) {
 		-0.90,0.90,0,0.90,
 	};
 
-	glGenVertexArrays(1, VAO);
-	glBindVertexArray(*VAO);
+	
+	glGenVertexArrays(1, &drawable->VAO);
+	glBindVertexArray(drawable->VAO);
 
 	unsigned int VBO;
 	glGenBuffers(1,&VBO);
@@ -193,14 +188,14 @@ void * initialize_glfw(void * arg) {
 	glCompileShader(fragment_shader);
 	glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
 
-	glAttachShader(*shader_program, fragment_shader);
-	glAttachShader(*shader_program, vertex_shader);
-	glLinkProgram(*shader_program);
-	glGetProgramiv(*shader_program, GL_LINK_STATUS, &success);
+	drawable->shader_program= glCreateProgram();
+	glAttachShader(drawable->shader_program, fragment_shader);
+	glAttachShader(drawable->shader_program, vertex_shader);
+	glLinkProgram(drawable->shader_program);
+	glGetProgramiv(drawable->shader_program, GL_LINK_STATUS, &success);
 	assert(success);
 
-	*shader_program = glCreateProgram();
-	glUseProgram(*shader_program);
+	glUseProgram(drawable->shader_program);
 	glDeleteShader(vertex_shader);
 	glDeleteShader(fragment_shader);
 
@@ -209,8 +204,8 @@ void * initialize_glfw(void * arg) {
 	glEnableVertexAttribArray(0);		
 	glEnableVertexAttribArray(1);
 
-	glGenTextures(1, texture);
-	glBindTexture(GL_TEXTURE_2D, *texture);
+	glGenTextures(1, &drawable->texture);
+	glBindTexture(GL_TEXTURE_2D, drawable->texture);
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -222,12 +217,12 @@ void * initialize_glfw(void * arg) {
 
 void * display_image(void * arg){
 
-	drawstruct * drawable = (drawstruct *)arg;
+	drawstruct * drawable = arg;
 	int width = drawable->width;
 	int height = drawable -> height;
-	unsigned int *shader_program = drawable->shader_program;
-	unsigned int *texture = drawable->texture; 
-	unsigned int *VAO = drawable->VAO;
+	unsigned int shader_program = drawable->shader_program;
+	unsigned int texture = drawable->texture; 
+	unsigned int VAO = drawable->VAO;
 	GLFWwindow * window = drawable ->window;
 	unsigned char* data = drawable->data;
 		
@@ -240,10 +235,10 @@ void * display_image(void * arg){
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, *texture);
+		glBindTexture(GL_TEXTURE_2D, texture);
 
-		glBindVertexArray(*VAO);
-		glUseProgram(*shader_program);
+		glBindVertexArray(VAO);
+		glUseProgram(shader_program);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 
 		glfwSwapBuffers(window);
@@ -259,7 +254,7 @@ void *print_image(void * arg){
 	drawstruct * drawable = (drawstruct *)arg;
 	int width = drawable->width;
 	int height = drawable -> height;
-	unsigned char* data = drawable->data;
+	unsigned char *data = drawable->data;
 	stbi_write_jpg(drawable->print_name, width, height,3,data, 90);
 	return NULL;
 }
@@ -268,13 +263,14 @@ void draw_heatmap(double * data, int width, int height, int free_data, int diffu
 
 	pthread_t show_thread;
 	pthread_t print_thread;
-	drawstruct drawable;
-	drawable.width = width;
-	drawable.height = height;
-	drawable.print_name = printname;
-
+	drawstruct *drawable = malloc(sizeof(drawstruct));
+	drawable->width = width;
+	drawable->height = height;
+	drawable->print_name = printname;
+	
 	if (show == 1){
-		pthread_create(&show_thread, NULL, initialize_glfw, (void *)(&drawable));
+		//pthread_create(&show_thread, NULL, initialize_glfw, (void *)(&drawable));
+		initialize_glfw(drawable);
 	}
 
 	if (free_data == 0) {
@@ -287,27 +283,30 @@ void draw_heatmap(double * data, int width, int height, int free_data, int diffu
 	unsigned char* normalized_data = normalize_array(data,width*height);
 	
 	if (show == 1) {
-		pthread_join(show_thread,NULL);
+		//pthread_join(show_thread,NULL);
 	}
 
 	if (show == 1){
-		drawable.data = normalized_data;
-		pthread_create(&show_thread, NULL, display_image, (void *)(&drawable));
+		drawable->data = normalized_data;
+		//pthread_create(&show_thread, NULL, display_image, (void *)(&drawable));
+		display_image(drawable);
 	}
 	
 	if (print == 1) {
-		drawable.print_name = printname;
-		pthread_create(&print_thread, NULL, print_image, (void *)(&drawable));
+		drawable->print_name = printname;
+		//pthread_create(&print_thread, NULL, print_image, (void *)(&drawable));
+		print_image(drawable);
 	}	
 
 	if (show == 1) {
-		pthread_join(show_thread,NULL);
+		//pthread_join(show_thread,NULL);
 	}
 	
 	if (print == 1) {
-		pthread_join(print_thread,NULL);
+		//pthread_join(print_thread,NULL);
 	}
-
+	
+	free(drawable);
 	free(normalized_data);
 	free(data);
 }   
